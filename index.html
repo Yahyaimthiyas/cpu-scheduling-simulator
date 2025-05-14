@@ -1,0 +1,514 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>CPU Scheduling Algorithms</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background-color: #f7f9fc;
+      padding: 20px;
+      color: #333;
+    }
+
+    h1, h2 {
+      color: #2c3e50;
+    }
+
+    label {
+      font-weight: bold;
+    }
+
+    input[type="number"], select {
+      padding: 6px 10px;
+      font-size: 16px;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+    }
+
+    button {
+      background-color: #72baea;
+      color: white;
+      border: none;
+      padding: 8px 15px;
+      font-size: 16px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: background-color 0.3s;
+    }
+
+    button:hover {
+      background-color: #72baea;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 20px;
+      background-color: white;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+    }
+
+    th {
+      background-color: #1a2b6c;
+      color: white;
+      padding: 10px;
+    }
+
+    td {
+      padding: 10px;
+      border-bottom: 1px solid #eee;
+    }
+
+    tr:nth-child(even) {
+      background-color: #f2f2f2;
+    }
+
+    #quantumDiv {
+      margin-top: 10px;
+    }
+
+    /* Gantt Chart Styles */
+    .gantt-container {
+      margin-top: 30px;
+      overflow-x: auto;
+    }
+
+    .gantt-chart {
+      display: flex;
+      flex-direction: column;
+      width: 100%;
+    }
+
+    .gantt-bar {
+      height: 50px;
+      position: relative;
+      background-color: #f0f0f0;
+      margin-bottom: 10px;
+      border-radius: 4px;
+    }
+
+    .time-markers {
+      position: relative;
+      height: 20px;
+      margin-top: 5px;
+      margin-bottom: 20px;
+    }
+
+    .time-marker {
+      position: absolute;
+      font-size: 12px;
+      text-align: center;
+      transform: translateX(-50%);
+    }
+
+    .time-marker::before {
+      content: '';
+      position: absolute;
+      height: 5px;
+      width: 1px;
+      background: #888;
+      top: -8px;
+      left: 50%;
+    }
+
+    .process-block {
+      position: absolute;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-weight: bold;
+      border-right: 1px solid rgba(255, 255, 255, 0.5);
+    }
+
+    .gantt-summary {
+      margin-top: 20px;
+    }
+  </style>
+</head>
+<body>
+
+<h1>CPU Scheduling Algorithms</h1>
+
+<label>Number of Processes: </label>
+<input type="number" id="processCount" min="1" max="10" value="3">
+<button onclick="updateProcessInputs()">Update Inputs</button>
+
+<h2>Process Input</h2>
+<table id="inputTable">
+  <thead>
+    <tr>
+      <th>Process</th>
+      <th>Burst Time (BT)</th>
+      <th>Arrival Time (AT)</th>
+    </tr>
+  </thead>
+  <tbody></tbody>
+</table>
+
+<h2>Select Scheduling Algorithm</h2>
+<select id="algorithm">
+  <option value="fcfs">FCFS</option>
+  <option value="sjf">SJF</option>
+  <option value="srtf">SRTF</option>
+  <option value="rr">Round Robin (RR)</option>
+</select>
+
+<div id="quantumDiv" style="display: none;">
+  <label>Enter Time Quantum:</label>
+  <input type="number" id="quantum" value="2" min="1">
+</div>
+
+<br>
+<button onclick="startScheduling()">Start Scheduling</button>
+
+<h2>Output Table</h2>
+<table id="outputTable">
+  <thead>
+    <tr>
+      <th>Process</th>
+      <th>Arrival Time</th>
+      <th>Burst Time</th>
+      <th>Completion Time</th>
+      <th>Turnaround Time</th>
+      <th>Waiting Time</th>
+    </tr>
+  </thead>
+  <tbody></tbody>
+</table>
+
+<h2>Gantt Chart</h2>
+<div class="gantt-container">
+  <div id="ganttChart" class="gantt-chart"></div>
+</div>
+
+<div class="gantt-summary">
+  <h3>Summary</h3>
+  <p id="avgTurnaround">Average Turnaround Time: </p>
+  <p id="avgWaiting">Average Waiting Time: </p>
+</div>
+
+<script>
+let processes = [];
+let executionSequence = [];
+const colors = [
+  '#3498db', '#e74c3c', '#2ecc71', '#f39c12', '#9b59b6',
+  '#1abc9c', '#d35400', '#34495e', '#7f8c8d', '#c0392b'
+];
+
+function updateProcessInputs() {
+  const count = parseInt(document.getElementById('processCount').value);
+  const tableBody = document.querySelector('#inputTable tbody');
+  tableBody.innerHTML = '';
+  for (let i = 0; i < count; i++) {
+    tableBody.innerHTML += `
+      <tr>
+        <td>Process ${i + 1}</td>
+        <td><input type="number" id="bt${i}" min="1" value="${i+1}"></td>
+        <td><input type="number" id="at${i}" min="0" value="0"></td>
+      </tr>`;
+  }
+}
+
+document.getElementById("algorithm").addEventListener("change", function () {
+  const algo = this.value;
+  document.getElementById("quantumDiv").style.display = (algo === "rr") ? "block" : "none";
+});
+
+function startScheduling() {
+  const count = parseInt(document.getElementById('processCount').value);
+  const algo = document.getElementById('algorithm').value;
+  processes = [];
+  executionSequence = [];
+
+  for (let i = 0; i < count; i++) {
+    let bt = parseInt(document.getElementById(`bt${i}`).value);
+    let at = parseInt(document.getElementById(`at${i}`).value);
+    processes.push({ id: i + 1, bt, at, rt: bt });
+  }
+
+  const outputBody = document.querySelector('#outputTable tbody');
+  outputBody.innerHTML = '';
+
+  let results;
+  if (algo === 'fcfs') results = runFCFS([...processes], outputBody);
+  else if (algo === 'sjf') results = runSJF([...processes], outputBody);
+  else if (algo === 'srtf') results = runSRTF([...processes], outputBody);
+  else if (algo === 'rr') {
+    const q = parseInt(document.getElementById('quantum').value);
+    results = runRR([...processes], outputBody, q);
+  }
+
+  drawGanttChart(executionSequence);
+  updateSummary(results);
+}
+
+function updateSummary(results) {
+  let totalTAT = 0;
+  let totalWT = 0;
+  
+  for (let p of results) {
+    totalTAT += p.tat;
+    totalWT += p.wt;
+  }
+  
+  const avgTAT = (totalTAT / results.length).toFixed(2);
+  const avgWT = (totalWT / results.length).toFixed(2);
+  
+  document.getElementById('avgTurnaround').textContent = `Average Turnaround Time: ${avgTAT}`;
+  document.getElementById('avgWaiting').textContent = `Average Waiting Time: ${avgWT}`;
+}
+
+function runFCFS(pList, out) {
+  pList.sort((a, b) => a.at - b.at);
+  let time = 0;
+  let results = [];
+  
+  for (let p of pList) {
+    if (time < p.at) time = p.at;
+    let startTime = time;
+    let ct = time + p.bt;
+    let tat = ct - p.at;
+    let wt = tat - p.bt;
+    
+    executionSequence.push({
+      id: p.id,
+      start: startTime,
+      end: ct
+    });
+    
+    time = ct;
+    results.push({ id: p.id, at: p.at, bt: p.bt, ct, tat, wt });
+    out.innerHTML += row(p.id, p.at, p.bt, ct, tat, wt);
+  }
+  
+  return results;
+}
+
+function runSJF(pList, out) {
+  let time = 0, done = 0, n = pList.length;
+  let isDone = Array(n).fill(false);
+  let results = [];
+
+  while (done < n) {
+    let idx = -1, minBT = Infinity;
+    for (let i = 0; i < n; i++) {
+      if (!isDone[i] && pList[i].at <= time && pList[i].bt < minBT) {
+        minBT = pList[i].bt;
+        idx = i;
+      }
+    }
+
+    if (idx === -1) {
+      time++;
+      continue;
+    }
+
+    let p = pList[idx];
+    let startTime = time;
+    let ct = time + p.bt;
+    let tat = ct - p.at;
+    let wt = tat - p.bt;
+    
+    executionSequence.push({
+      id: p.id,
+      start: startTime,
+      end: ct
+    });
+    
+    time = ct;
+    isDone[idx] = true;
+    done++;
+    results.push({ id: p.id, at: p.at, bt: p.bt, ct, tat, wt });
+    out.innerHTML += row(p.id, p.at, p.bt, ct, tat, wt);
+  }
+  
+  return results;
+}
+
+function runSRTF(pList, out) {
+  let n = pList.length;
+  let time = 0, done = 0;
+  let complete = Array(n).fill(false);
+  let rt = pList.map(p => p.bt);
+  let results = [];
+  let lastProcess = -1;
+  let startTime = 0;
+
+  while (done < n) {
+    let idx = -1, minRT = Infinity;
+    for (let i = 0; i < n; i++) {
+      if (!complete[i] && pList[i].at <= time && rt[i] < minRT && rt[i] > 0) {
+        minRT = rt[i];
+        idx = i;
+      }
+    }
+
+    if (idx === -1) {
+      time++;
+      continue;
+    }
+
+    // If process changes, record the previous execution
+    if (lastProcess !== -1 && lastProcess !== idx) {
+      executionSequence.push({
+        id: pList[lastProcess].id,
+        start: startTime,
+        end: time
+      });
+      startTime = time;
+    }
+    
+    // If this is the first process or a process change
+    if (lastProcess === -1 || lastProcess !== idx) {
+      lastProcess = idx;
+      startTime = time;
+    }
+
+    rt[idx]--;
+    time++;
+
+    if (rt[idx] === 0) {
+      // Add the final execution block for this process
+      executionSequence.push({
+        id: pList[idx].id,
+        start: startTime,
+        end: time
+      });
+      
+      complete[idx] = true;
+      done++;
+      let ct = time;
+      let tat = ct - pList[idx].at;
+      let wt = tat - pList[idx].bt;
+      results.push({ id: pList[idx].id, at: pList[idx].at, bt: pList[idx].bt, ct, tat, wt });
+      out.innerHTML += row(pList[idx].id, pList[idx].at, pList[idx].bt, ct, tat, wt);
+      
+      lastProcess = -1;
+    }
+  }
+  
+  return results;
+}
+
+function runRR(pList, out, q) {
+  let time = 0;
+  let queue = [];
+  let n = pList.length;
+  let remaining = [...pList].map(p => ({...p}));
+  let complete = [];
+  let results = [];
+
+  remaining.sort((a, b) => a.at - b.at);
+  
+  if (remaining.length > 0) {
+    queue.push(remaining.shift());
+  }
+
+  while (queue.length > 0 || remaining.length > 0) {
+    // If queue is empty but we still have processes to arrive
+    if (queue.length === 0 && remaining.length > 0) {
+      time = remaining[0].at;
+      queue.push(remaining.shift());
+    }
+    
+    let p = queue.shift();
+    let startTime = time;
+    let workTime = Math.min(q, p.rt);
+    p.rt -= workTime;
+    time += workTime;
+
+    executionSequence.push({
+      id: p.id,
+      start: startTime,
+      end: time
+    });
+
+    // Check for new arrivals during this time quantum
+    while (remaining.length > 0 && remaining[0].at <= time) {
+      queue.push(remaining.shift());
+    }
+
+    if (p.rt > 0) {
+      // Process still has work to do
+      queue.push(p);
+    } else {
+      // Process is complete
+      let ct = time;
+      let tat = ct - p.at;
+      let wt = tat - p.bt;
+      results.push({ id: p.id, at: p.at, bt: p.bt, ct, tat, wt });
+      out.innerHTML += row(p.id, p.at, p.bt, ct, tat, wt);
+    }
+  }
+  
+  return results;
+}
+
+function row(id, at, bt, ct, tat, wt) {
+  return `
+    <tr>
+      <td>Process ${id}</td>
+      <td>${at}</td>
+      <td>${bt}</td>
+      <td>${ct}</td>
+      <td>${tat}</td>
+      <td>${wt}</td>
+    </tr>`;
+}
+
+function drawGanttChart(executionSequence) {
+  const ganttChart = document.getElementById('ganttChart');
+  ganttChart.innerHTML = '';
+  
+  if (executionSequence.length === 0) return;
+  
+  // Sort execution sequence by start time
+  executionSequence.sort((a, b) => a.start - b.start);
+  
+  // Find the end time of the last process
+  const endTime = Math.max(...executionSequence.map(p => p.end));
+  const timeScale = 50; // 50px per time unit
+  const totalWidth = endTime * timeScale;
+  
+  // Create the single bar container
+  const ganttBar = document.createElement('div');
+  ganttBar.className = 'gantt-bar';
+  ganttBar.style.width = `${totalWidth}px`;
+  
+  // Add process blocks to the bar
+  executionSequence.forEach(block => {
+    const blockElem = document.createElement('div');
+    blockElem.className = 'process-block';
+    blockElem.style.left = `${block.start * timeScale}px`;
+    blockElem.style.width = `${(block.end - block.start) * timeScale}px`;
+    blockElem.style.backgroundColor = colors[(block.id - 1) % colors.length];
+    blockElem.textContent = `P${block.id}`;
+    ganttBar.appendChild(blockElem);
+  });
+  
+  ganttChart.appendChild(ganttBar);
+  
+  // Add time markers
+  const timeMarkers = document.createElement('div');
+  timeMarkers.className = 'time-markers';
+  timeMarkers.style.width = `${totalWidth}px`;
+  
+  for (let i = 0; i <= endTime; i++) {
+    const marker = document.createElement('div');
+    marker.className = 'time-marker';
+    marker.style.left = `${i * timeScale}px`;
+    marker.textContent = i;
+    timeMarkers.appendChild(marker);
+  }
+  
+  ganttChart.appendChild(timeMarkers);
+}
+
+updateProcessInputs();
+</script>
+
+</body>
+</html>
